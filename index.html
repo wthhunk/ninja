@@ -25,13 +25,14 @@
     <h1>FLÃVIO LIVE</h1>
     <p id="message">Procurando a call...</p>
     <div class="status"><span id="dot" class="dot"></span><span id="state">VERIFICANDO</span></div>
-    <button id="retry" hidden>ATUALIZAR</button>
-    <div class="small">Este endereÃ§o Ã© sÃ³ a porta de entrada. A call roda no PC do FlÃ¡vio.</div>
+    <button id="retry" hidden>ATUALIZAR AGORA</button>
+    <div class="small">A call roda no PC do FlÃ¡vio. Esta pÃ¡gina sÃ³ encontra o tÃºnel atual.</div>
   </main>
 
 <script>
-const ENDPOINT_JSON = "https://raw.githubusercontent.com/wthhunk/ninja/main/endpoint.json";
+const API = "https://api.github.com/repos/wthhunk/ninja/contents/endpoint.json?ref=main";
 const KEY_STORE = "flavio_ninja_access_key_v1";
+const ENDPOINT_STORE = "flavio_ninja_last_endpoint_v1";
 
 const message = document.getElementById("message");
 const state = document.getElementById("state");
@@ -46,6 +47,9 @@ if (key) {
   key = localStorage.getItem(KEY_STORE) || "";
 }
 
+let attempts = 0;
+let checking = false;
+
 function setState(label, text, ok=false) {
   state.textContent = label;
   message.textContent = text;
@@ -56,7 +60,11 @@ async function fetchJson(url, timeout=5000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
-    const r = await fetch(url, {cache:"no-store", signal:ctrl.signal});
+    const r = await fetch(url, {
+      cache: "no-store",
+      signal: ctrl.signal,
+      headers: { "Accept": "application/vnd.github+json" }
+    });
     if (!r.ok) throw new Error("HTTP " + r.status);
     return await r.json();
   } finally {
@@ -64,39 +72,98 @@ async function fetchJson(url, timeout=5000) {
   }
 }
 
-async function check() {
-  retry.hidden = true;
-
-  if (!key) {
-    setState("LINK INCOMPLETO", "Abra o link privado completo que o FlÃ¡vio te enviou.");
-    retry.hidden = false;
-    return;
-  }
-
-  setState("VERIFICANDO", "Procurando a call...");
-
+async function health(endpoint) {
+  endpoint = String(endpoint || "").replace(/\/+$/, "");
+  if (!endpoint.startsWith("https://")) return false;
   try {
-    const ep = await fetchJson(ENDPOINT_JSON + "?t=" + Date.now());
-    if (!ep.online || !ep.endpoint) {
-      setState("OFFLINE", "FlÃ¡vio ainda nÃ£o iniciou a stream.");
-      setTimeout(check, 15000);
-      return;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3500);
+    try {
+      const r = await fetch(endpoint + "/__flavio_public_health?t=" + Date.now(), {
+        cache: "no-store",
+        signal: ctrl.signal
+      });
+      if (!r.ok) return false;
+      const j = await r.json();
+      return !!j.ok;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const endpoint = String(ep.endpoint).replace(/\/+$/, "");
-    await fetchJson(endpoint + "/__flavio_public_health?t=" + Date.now(), 4500);
-
-    setState("ONLINE", "Entrando na call...", true);
-    location.replace(endpoint + "/join?k=" + encodeURIComponent(key));
-  } catch (e) {
-    setState("OFFLINE", "A call nÃ£o estÃ¡ acessÃ­vel agora.");
-    retry.hidden = false;
-    setTimeout(check, 15000);
+  } catch {
+    return false;
   }
 }
 
-retry.addEventListener("click", check);
-check();
+async function getEndpointFromGitHub() {
+  const j = await fetchJson(API + "&t=" + Date.now(), 5000);
+  if (!j.content) throw new Error("Sem content");
+  const raw = atob(String(j.content).replace(/\s/g, ""));
+  const ep = JSON.parse(raw);
+  return String(ep.endpoint || "").replace(/\/+$/, "");
+}
+
+function nextDelay() {
+  // Primeiros segundos: bem agressivo. Depois reduz para nÃ£o estourar o
+  // limite anÃ´nimo da API do GitHub.
+  if (attempts <= 1) return 3000;
+  if (attempts === 2) return 5000;
+  if (attempts === 3) return 10000;
+  if (attempts === 4) return 20000;
+  return 90000;
+}
+
+async function check(force=false) {
+  if (checking) return;
+  checking = true;
+  retry.hidden = true;
+
+  try {
+    if (!key) {
+      setState("LINK INCOMPLETO", "Abra o link privado completo que o FlÃ¡vio te enviou.");
+      retry.hidden = false;
+      return;
+    }
+
+    setState("VERIFICANDO", "Procurando a call...");
+
+    // Primeiro tenta o tÃºnel que funcionou da Ãºltima vez. Isso evita GitHub
+    // quando a mesma stream ainda estÃ¡ aberta.
+    const saved = localStorage.getItem(ENDPOINT_STORE) || "";
+    if (saved && await health(saved)) {
+      setState("ONLINE", "Entrando na call...", true);
+      location.replace(saved + "/join?k=" + encodeURIComponent(key));
+      return;
+    }
+
+    // Se o tÃºnel antigo morreu, consulta diretamente o Contents API.
+    const endpoint = await getEndpointFromGitHub();
+    if (endpoint && await health(endpoint)) {
+      localStorage.setItem(ENDPOINT_STORE, endpoint);
+      setState("ONLINE", "Entrando na call...", true);
+      location.replace(endpoint + "/join?k=" + encodeURIComponent(key));
+      return;
+    }
+
+    attempts++;
+    setState("OFFLINE", "A call nÃ£o estÃ¡ acessÃ­vel agora.");
+    retry.hidden = false;
+  } catch (e) {
+    attempts++;
+    setState("OFFLINE", "A call nÃ£o estÃ¡ acessÃ­vel agora.");
+    retry.hidden = false;
+  } finally {
+    checking = false;
+  }
+
+  setTimeout(() => check(false), force ? 1000 : nextDelay());
+}
+
+retry.addEventListener("click", () => {
+  attempts = 0;
+  check(true);
+});
+
+check(false);
 </script>
 </body>
 </html>
