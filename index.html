@@ -3,117 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#090b10">
-  <title>FlÃ¡vio Live</title>
+  <meta name="theme-color" content="#080a0f">
+  <title>WTHHUNK NINJA</title>
   <style>
-    :root{color-scheme:dark;--bg:#090b10;--panel:#11151d;--line:#252d3a;--text:#f4f6fb;--muted:#939cac}
-    *{box-sizing:border-box}
-    html,body{margin:0;width:100%;height:100%;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
-    body{display:grid;place-items:center;padding:24px}
-    .box{width:min(520px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:28px;text-align:center}
-    h1{margin:0 0 10px;font-size:clamp(30px,8vw,52px)}
-    p{color:var(--muted);line-height:1.5;margin:0}
-    .status{margin-top:20px;font-weight:800}
-    button{margin-top:20px;border:0;border-radius:11px;padding:12px 18px;font-weight:800;cursor:pointer}
+    :root{color-scheme:dark;--bg:#080a0f;--panel:#11151d;--line:#252d3a;--text:#f4f6fb;--muted:#939cac;--accent:#8aa8ff}
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:var(--bg);color:var(--text);font-family:Inter,"Segoe UI",Arial,sans-serif}
+    body{display:grid;place-items:center;padding:24px}.box{width:min(540px,100%);background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:32px;text-align:center;box-shadow:0 22px 80px #0007}
+    .brand{font-size:12px;letter-spacing:.18em;font-weight:800;color:var(--muted)}h1{font-size:34px;margin:10px 0 8px}p{margin:0;color:var(--muted)}
+    .spin{width:34px;height:34px;border:3px solid #2d3542;border-top-color:var(--accent);border-radius:50%;margin:24px auto 18px;animation:r .8s linear infinite}@keyframes r{to{transform:rotate(360deg)}}
+    button{margin-top:20px;border:0;border-radius:12px;padding:12px 18px;font-weight:800;cursor:pointer}
   </style>
 </head>
 <body>
 <main class="box">
-  <h1>FLÃVIO LIVE</h1>
-  <p id="msg">Entrando...</p>
-  <div class="status" id="status">CONECTANDO</div>
-  <button id="retry" hidden>TENTAR AGORA</button>
+  <div class="brand">WTHHUNK NINJA</div>
+  <div class="spin" id="spin"></div>
+  <h1 id="state">Conectando</h1>
+  <p id="msg">Buscando a call atual...</p>
+  <button id="retry" hidden>TENTAR NOVAMENTE</button>
 </main>
-
 <script>
-const API = "https://api.github.com/repos/wthhunk/ninja/contents/endpoint.json?ref=main";
-const KEY_STORE = "flavio_ninja_access_key_v1";
-
-const msg = document.getElementById("msg");
-const status = document.getElementById("status");
-const retry = document.getElementById("retry");
-
-let key = location.hash.length > 1 ? decodeURIComponent(location.hash.slice(1)) : "";
-if (key) {
-  localStorage.setItem(KEY_STORE, key);
-  history.replaceState(null, "", location.pathname + location.search);
-} else {
-  key = localStorage.getItem(KEY_STORE) || "";
-}
-
-let busy = false;
-let timer = null;
-
-function schedule(ms) {
-  clearTimeout(timer);
-  timer = setTimeout(connect, ms);
-}
-
-async function endpointNow() {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 3000);
-  try {
-    const r = await fetch(API + "&_=" + Date.now(), {
-      cache: "no-store",
-      signal: ctrl.signal,
-      headers: {
-        "Accept": "application/vnd.github+json"
-      }
-    });
-    if (!r.ok) throw new Error("GitHub HTTP " + r.status);
-
-    const j = await r.json();
-    if (!j.content) throw new Error("endpoint.json vazio");
-
-    const raw = atob(String(j.content).replace(/\s/g, ""));
-    const ep = JSON.parse(raw);
-
-    if (!ep.endpoint) throw new Error("sem endpoint");
-    return String(ep.endpoint).replace(/\/+$/, "");
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-async function connect() {
-  if (busy) return;
-
-  if (!key) {
-    status.textContent = "LINK INCOMPLETO";
-    msg.textContent = "Abra o link privado completo enviado pelo FlÃ¡vio.";
-    retry.hidden = false;
-    return;
-  }
-
-  busy = true;
-  retry.hidden = true;
-  status.textContent = "CONECTANDO";
-  msg.textContent = "Buscando a call atual...";
-
-  try {
-    // ÃšNICA checagem: lÃª o endpoint mais recente e entra.
-    // O PC jÃ¡ validou o tÃºnel antes de publicÃ¡-lo.
-    const endpoint = await endpointNow();
-    location.replace(endpoint + "/join?k=" + encodeURIComponent(key));
-    return;
-  } catch (e) {
-    status.textContent = "OFFLINE";
-    msg.textContent = "A call ainda nÃ£o estÃ¡ disponÃ­vel.";
-    retry.hidden = false;
-  } finally {
-    busy = false;
-  }
-
-  // RepetiÃ§Ã£o leve sÃ³ quando realmente nÃ£o conseguiu obter um endpoint.
-  schedule(3000);
-}
-
-retry.addEventListener("click", () => {
-  clearTimeout(timer);
-  connect();
-});
-
-connect();
+const API="https://api.github.com/repos/wthhunk/ninja/contents/endpoint.json?ref=main";
+const KEY_STORE="wthhunk_ninja_access_key_v09";
+const LEGACY_KEY_STORE="flavio_ninja_access_key_v1";
+let key=location.hash.length>1?decodeURIComponent(location.hash.slice(1)):"";
+if(key){localStorage.setItem(KEY_STORE,key);history.replaceState(null,"",location.pathname+location.search)}else{key=localStorage.getItem(KEY_STORE)||localStorage.getItem(LEGACY_KEY_STORE)||"";if(key)localStorage.setItem(KEY_STORE,key)}
+const state=document.getElementById("state"),msg=document.getElementById("msg"),retry=document.getElementById("retry"),spin=document.getElementById("spin");
+let busy=false,timer=null;
+function later(ms){clearTimeout(timer);timer=setTimeout(connect,ms)}
+async function endpoint(){const c=new AbortController(),t=setTimeout(()=>c.abort(),3500);try{const r=await fetch(API+"&_="+Date.now(),{cache:"no-store",signal:c.signal,headers:{Accept:"application/vnd.github+json"}});if(!r.ok)throw Error("HTTP "+r.status);const j=await r.json();const raw=atob(String(j.content||"").replace(/\s/g,""));const ep=JSON.parse(raw);if(!ep.online||!ep.endpoint)throw Error("offline");return String(ep.endpoint).replace(/\/+$/,"")}finally{clearTimeout(t)}}
+async function connect(){if(busy)return;if(!key){spin.style.display="none";state.textContent="Link incompleto";msg.textContent="Abra o link privado completo enviado pelo host.";retry.hidden=false;return}busy=true;retry.hidden=true;spin.style.display="block";state.textContent="Conectando";msg.textContent="Buscando a call atual...";try{const ep=await endpoint();location.replace(ep+"/join?k="+encodeURIComponent(key));return}catch(e){state.textContent="Offline";msg.textContent="A call ainda não está disponível.";spin.style.display="none";retry.hidden=false}finally{busy=false}later(3000)}
+retry.onclick=()=>{clearTimeout(timer);connect()};connect();
 </script>
-</body>
-</html>
+</body></html>
