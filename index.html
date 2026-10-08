@@ -9,7 +9,7 @@
     :root{color-scheme:dark;--bg:#080a0f;--panel:#11151d;--line:#252d3a;--text:#f4f6fb;--muted:#939cac;--accent:#8aa8ff}
     *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:var(--bg);color:var(--text);font-family:Inter,"Segoe UI",Arial,sans-serif}
     body{display:grid;place-items:center;padding:24px}.box{width:min(540px,100%);background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:32px;text-align:center;box-shadow:0 22px 80px #0007}
-    .brand{font-size:12px;letter-spacing:.18em;font-weight:800;color:var(--muted)}h1{font-size:34px;margin:10px 0 8px}p{margin:0;color:var(--muted)}
+    .brand{font-size:12px;letter-spacing:.18em;font-weight:800;color:var(--muted)}h1{font-size:34px;margin:10px 0 8px}p{margin:0;color:var(--muted);line-height:1.5}
     .spin{width:34px;height:34px;border:3px solid #2d3542;border-top-color:var(--accent);border-radius:50%;margin:24px auto 18px;animation:r .8s linear infinite}@keyframes r{to{transform:rotate(360deg)}}
     button{margin-top:20px;border:0;border-radius:12px;padding:12px 18px;font-weight:800;cursor:pointer}
   </style>
@@ -20,19 +20,129 @@
   <div class="spin" id="spin"></div>
   <h1 id="state">Conectando</h1>
   <p id="msg">Buscando a call atual...</p>
-  <button id="retry" hidden>TENTAR NOVAMENTE</button>
+  <button id="retry" hidden>TENTAR AGORA</button>
 </main>
 <script>
 const API="https://api.github.com/repos/wthhunk/ninja/contents/endpoint.json?ref=main";
 const KEY_STORE="wthhunk_ninja_access_key_v09";
 const LEGACY_KEY_STORE="flavio_ninja_access_key_v1";
+
 let key=location.hash.length>1?decodeURIComponent(location.hash.slice(1)):"";
-if(key){localStorage.setItem(KEY_STORE,key);history.replaceState(null,"",location.pathname+location.search)}else{key=localStorage.getItem(KEY_STORE)||localStorage.getItem(LEGACY_KEY_STORE)||"";if(key)localStorage.setItem(KEY_STORE,key)}
-const state=document.getElementById("state"),msg=document.getElementById("msg"),retry=document.getElementById("retry"),spin=document.getElementById("spin");
+if(key){
+  localStorage.setItem(KEY_STORE,key);
+  history.replaceState(null,"",location.pathname+location.search);
+}else{
+  key=localStorage.getItem(KEY_STORE)||localStorage.getItem(LEGACY_KEY_STORE)||"";
+  if(key)localStorage.setItem(KEY_STORE,key);
+}
+
+const state=document.getElementById("state");
+const msg=document.getElementById("msg");
+const retry=document.getElementById("retry");
+const spin=document.getElementById("spin");
+
 let busy=false,timer=null;
-function later(ms){clearTimeout(timer);timer=setTimeout(connect,ms)}
-async function endpoint(){const c=new AbortController(),t=setTimeout(()=>c.abort(),3500);try{const r=await fetch(API+"&_="+Date.now(),{cache:"no-store",signal:c.signal,headers:{Accept:"application/vnd.github+json"}});if(!r.ok)throw Error("HTTP "+r.status);const j=await r.json();const raw=atob(String(j.content||"").replace(/\s/g,""));const ep=JSON.parse(raw);if(!ep.online||!ep.endpoint)throw Error("offline");return String(ep.endpoint).replace(/\/+$/,"")}finally{clearTimeout(t)}}
-async function connect(){if(busy)return;if(!key){spin.style.display="none";state.textContent="Link incompleto";msg.textContent="Abra o link privado completo enviado pelo host.";retry.hidden=false;return}busy=true;retry.hidden=true;spin.style.display="block";state.textContent="Conectando";msg.textContent="Buscando a call atual...";try{const ep=await endpoint();location.replace(ep+"/join?k="+encodeURIComponent(key));return}catch(e){state.textContent="Offline";msg.textContent="A call ainda não está disponível.";spin.style.display="none";retry.hidden=false}finally{busy=false}later(3000)}
-retry.onclick=()=>{clearTimeout(timer);connect()};connect();
+
+function schedule(ms){
+  clearTimeout(timer);
+  timer=setTimeout(connect,ms);
+}
+
+function showOffline(text="A call está fechada. Quando o host iniciar, esta página entra automaticamente."){
+  spin.style.display="none";
+  state.textContent="Call offline";
+  msg.textContent=text;
+  retry.hidden=false;
+}
+
+async function endpointNow(){
+  const ctrl=new AbortController();
+  const t=setTimeout(()=>ctrl.abort(),3500);
+  try{
+    const r=await fetch(API+"&_="+Date.now(),{
+      cache:"no-store",
+      signal:ctrl.signal,
+      headers:{Accept:"application/vnd.github+json"}
+    });
+    if(!r.ok)throw Error("GitHub HTTP "+r.status);
+    const j=await r.json();
+    if(!j.content)throw Error("endpoint.json vazio");
+    const raw=atob(String(j.content).replace(/\s/g,""));
+    return JSON.parse(raw);
+  }finally{clearTimeout(t)}
+}
+
+async function tunnelHealthy(endpoint){
+  // Important: endpoint.json can be stale after an app crash or instant shutdown.
+  // Verify the connector before redirecting so the user never lands on CF 1033.
+  const ctrl=new AbortController();
+  const t=setTimeout(()=>ctrl.abort(),1800);
+  try{
+    const r=await fetch(String(endpoint).replace(/\/+$/,"")+
+      "/__wthhunk_public_health?_="+Date.now(),{
+        cache:"no-store",
+        signal:ctrl.signal,
+        mode:"cors"
+      });
+    if(!r.ok)return false;
+    const data=await r.json().catch(()=>null);
+    return !!(data&&data.ok===true);
+  }catch(_){
+    return false;
+  }finally{
+    clearTimeout(t);
+  }
+}
+
+async function connect(){
+  if(busy)return;
+
+  if(!key){
+    spin.style.display="none";
+    state.textContent="Link incompleto";
+    msg.textContent="Abra o link privado completo enviado pelo host.";
+    retry.hidden=false;
+    return;
+  }
+
+  busy=true;
+  retry.hidden=true;
+  spin.style.display="block";
+  state.textContent="Conectando";
+  msg.textContent="Buscando a call atual...";
+
+  try{
+    const ep=await endpointNow();
+
+    if(!ep.online||!ep.endpoint){
+      showOffline();
+      schedule(3000);
+      return;
+    }
+
+    state.textContent="Verificando";
+    msg.textContent="Confirmando que a call está realmente online...";
+
+    const endpoint=String(ep.endpoint).replace(/\/+$/,"");
+    if(!await tunnelHealthy(endpoint)){
+      // Stale Quick Tunnel: stay on Pages instead of sending the browser to 1033.
+      showOffline("A call não está acessível agora. Aguardando o host iniciar ou recuperar a conexão...");
+      schedule(3000);
+      return;
+    }
+
+    location.replace(endpoint+"/join?k="+encodeURIComponent(key));
+    return;
+  }catch(e){
+    showOffline("Não consegui consultar a call agora. Tentando novamente...");
+    schedule(3000);
+  }finally{
+    busy=false;
+  }
+}
+
+retry.onclick=()=>{clearTimeout(timer);connect()};
+connect();
 </script>
-</body></html>
+</body>
+</html>
